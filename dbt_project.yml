@@ -34,11 +34,15 @@ clean-targets:         # directories to be removed by `dbt clean`
 # Project Variables
 # ---------------------------------------------------------------
 vars:
-  # dbt-osmosis: Default naming for auto-generated YAML files
-  # This enables the "Dynamic Updates" by mapping columns to files
+  # This serves as the fallback for ALL resources, including semantic models.
+  # Using vars avoids the strict "struct" validation errors in Fusion.
+
+  # dbt_project.yml
+  # Global fallback for all model and semantic model naming
   dbt_osmosis_default_path: "_{model}.yml"
-  
   dbt-osmosis:
+    # Directory overrides can go here
+    staging_path: "{parent}.yml"
     yaml_settings:
       width: 120
       preserve_quotes: true
@@ -62,36 +66,22 @@ vars:
 # ---------------------------------------------------------------
 models:
   revrebel_metrics:
-    # Searchable Definitions: Pushes YAML descriptions into BigQuery Console
-    +persist_docs:
-      relation: true
-      columns: true
-
     staging:
       +materialized: view
-      +dbt-osmosis: "{parent}.yml" # Groups staging YAMLs by folder
-      +tags: ["staging"]
-
-    marts:
-      +materialized: table
-      +dbt-osmosis: "_{model}.yml" # One YAML per model for mart clarity
-      +tags: ["marts"]
-      
-      # 3. FIXED BigQuery PartitionConfig 
-      # Aligned with the BigqueryPartitionConfig schema for Fusion
-      facts:
-        +partition_by:
-          field: created_at # The column used for segmenting
-          data_type: timestamp # Must be: date, timestamp, datetime, or int64
-          granularity: day # Optional: day, hour, month, year
-        +cluster_by: ["customer_id", "segment_id"] # Improves "Searchable Definitions" performance
+      +location: "us-central1"
+      +meta:
+        copy_dataset_tags: false
 
 # ---------------------------------------------------------------
-# Semantic Layer (MetricFlow) Configuration
+# Fusion Engine Specifics: Cost & Metadata Labeling
 # ---------------------------------------------------------------
-# Treats business metrics like "rev_otb_chg_90" as searchable first-class objects
+# Enables query labels to track costs of BigQuery wide table scans
 semantic-models:
-  +dbt-osmosis: "_semantic_{model}.yml"
+  revrebel_metrics:
+    # Remove the +dbt-osmosis line from here. 
+    # Fusion expects this to be a dictionary of SPEC-VALID keys only.
+    # dbt-osmosis will automatically use the global var set above.
+    +enabled: true
 
 # ---------------------------------------------------------------
 # Fusion Engine Specifics: Cost & Metadata Labeling
