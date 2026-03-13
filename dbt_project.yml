@@ -1,0 +1,102 @@
+
+# Name your project! Project names should contain only lowercase characters
+# and underscores. A good package name should reflect your organization's
+# name or the intended use of these models
+name: 'revrebel_metrics'
+version: '1.0.0'
+config-version: 2
+
+# This setting configures which "profile" dbt uses for this project.
+profile: 'BigQuery'
+
+# These configurations specify where dbt should look for different types of files.
+# The `model-paths` config, for example, states that models in this project can be
+# found in the "models/" directory. You probably won't need to change these!
+model-paths: ["models"]
+analysis-paths: ["analyses"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+docs-paths: ["docs"]
+
+# Asset and Skill paths for AI agents (dbt-agent-skills)
+asset-paths: ["assets"]
+# Custom key for agent skills if using dbt-mcp or Claude Code
+# skills-paths: ["skills"]
+
+target-path: "target"  # directory which will store compiled SQL files
+clean-targets:         # directories to be removed by `dbt clean`
+  - "target"
+  - "dbt_packages"
+
+# ---------------------------------------------------------------
+# Project Variables
+# ---------------------------------------------------------------
+vars:
+  # dbt-osmosis: Default naming for auto-generated YAML files
+  # This enables the "Dynamic Updates" by mapping columns to files
+  dbt_osmosis_default_path: "_{model}.yml"
+  
+  dbt-osmosis:
+    yaml_settings:
+      width: 120
+      preserve_quotes: true
+    # Exclude system columns to keep documentation clean
+    column_ignore_patterns:
+      - "_FIVETRAN_SYNCED"
+      - "_PARTITIONTIME"
+
+# Configuring models
+# Full documentation: https://docs.getdbt.com/docs/configuring-models
+
+# In dbt, the default materialization for a model is a view. This means, when you run 
+# dbt run or dbt build, all of your models will be built as a view in your data platform. 
+# The configuration below will override this setting for models in the example folder to 
+# instead be materialized as tables. Any models you add to the root of the models folder will 
+# continue to be built as views. These settings can be overridden in the individual model files
+# using the `{{ config(...) }}` macro.
+
+# ---------------------------------------------------------------
+# Model Configurations (Partitioning & Searchability)
+# ---------------------------------------------------------------
+models:
+  revrebel_metrics:
+    # Searchable Definitions: Pushes YAML descriptions into BigQuery Console
+    +persist_docs:
+      relation: true
+      columns: true
+
+    staging:
+      +materialized: view
+      +dbt-osmosis: "{parent}.yml" # Groups staging YAMLs by folder
+      +tags: ["staging"]
+
+    marts:
+      +materialized: table
+      +dbt-osmosis: "_{model}.yml" # One YAML per model for mart clarity
+      +tags: ["marts"]
+      
+      # 3. FIXED BigQuery PartitionConfig 
+      # Aligned with the BigqueryPartitionConfig schema for Fusion
+      facts:
+        +partition_by:
+          field: created_at # The column used for segmenting
+          data_type: timestamp # Must be: date, timestamp, datetime, or int64
+          granularity: day # Optional: day, hour, month, year
+        +cluster_by: ["customer_id", "segment_id"] # Improves "Searchable Definitions" performance
+
+# ---------------------------------------------------------------
+# Semantic Layer (MetricFlow) Configuration
+# ---------------------------------------------------------------
+# Treats business metrics like "rev_otb_chg_90" as searchable first-class objects
+semantic-models:
+  +dbt-osmosis: "_semantic_{model}.yml"
+
+# ---------------------------------------------------------------
+# Fusion Engine Specifics: Cost & Metadata Labeling
+# ---------------------------------------------------------------
+# Enables query labels to track costs of BigQuery wide table scans
+query-comment:
+  comment: '{{ "dbt-" ~ dbt_version ~ "-" ~ model.name if model else "dbt-internal" }}'
+  job-label: true
